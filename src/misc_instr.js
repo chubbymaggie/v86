@@ -11,10 +11,21 @@
  * lea
  * enter
  * bswap
- *
- * Gets #included by cpu.macro.js
  */
 "use strict";
+
+CPU.prototype.jmpcc8 = function(condition)
+{
+    if(condition)
+    {
+        var imm8 = this.read_imm8s();
+        this.instruction_pointer = this.instruction_pointer + imm8 | 0;
+    }
+    else
+    {
+        this.instruction_pointer = this.instruction_pointer + 1 | 0;
+    }
+};
 
 CPU.prototype.jmp_rel16 = function(rel16)
 {
@@ -25,7 +36,7 @@ CPU.prototype.jmp_rel16 = function(rel16)
     this.instruction_pointer -= current_cs;
     this.instruction_pointer = (this.instruction_pointer + rel16) & 0xFFFF;
     this.instruction_pointer = this.instruction_pointer + current_cs | 0;
-}
+};
 
 CPU.prototype.jmpcc16 = function(condition)
 {
@@ -54,13 +65,37 @@ CPU.prototype.jmpcc32 = function(condition)
     {
         this.instruction_pointer = this.instruction_pointer + 4 | 0;
     }
-}
+};
+
+CPU.prototype.cmovcc16 = function(condition)
+{
+    var data = this.read_e16();
+    if(condition)
+    {
+        this.write_g16(data);
+    }
+};
+
+CPU.prototype.cmovcc32 = function(condition)
+{
+    var data = this.read_e32s();
+    if(condition)
+    {
+        this.write_g32(data);
+    }
+};
+
+CPU.prototype.setcc = function(condition)
+{
+    this.set_e8(condition ? 1 : 0)
+};
 
 CPU.prototype.loopne = function(imm8s)
 {
     if(--this.regv[this.reg_vcx] && !this.getzf())
     {
         this.instruction_pointer = this.instruction_pointer + imm8s | 0;
+        if(!this.operand_size_32) dbg_assert(this.get_real_eip() <= 0xffff);
     }
 }
 
@@ -69,6 +104,7 @@ CPU.prototype.loope = function(imm8s)
     if(--this.regv[this.reg_vcx] && this.getzf())
     {
         this.instruction_pointer = this.instruction_pointer + imm8s | 0;
+        if(!this.operand_size_32) dbg_assert(this.get_real_eip() <= 0xffff);
     }
 }
 
@@ -77,6 +113,7 @@ CPU.prototype.loop = function(imm8s)
     if(--this.regv[this.reg_vcx])
     {
         this.instruction_pointer = this.instruction_pointer + imm8s | 0;
+        if(!this.operand_size_32) dbg_assert(this.get_real_eip() <= 0xffff);
     }
 }
 
@@ -85,10 +122,11 @@ CPU.prototype.jcxz = function(imm8s)
     if(this.regv[this.reg_vcx] === 0)
     {
         this.instruction_pointer = this.instruction_pointer + imm8s | 0;
+        if(!this.operand_size_32) dbg_assert(this.get_real_eip() <= 0xffff);
     }
 };
 
-/** 
+/**
  * @return {number}
  * @const
  */
@@ -204,7 +242,7 @@ CPU.prototype.push16 = function(imm16)
     var sp = this.get_stack_pointer(-2);
 
     this.safe_write16(sp, imm16);
-    this.stack_reg[this.reg_vsp] -= 2;
+    this.adjust_stack_reg(-2);
 }
 
 CPU.prototype.push32 = function(imm32)
@@ -212,24 +250,24 @@ CPU.prototype.push32 = function(imm32)
     var sp = this.get_stack_pointer(-4);
 
     this.safe_write32(sp, imm32);
-    this.stack_reg[this.reg_vsp] -= 4;
+    this.adjust_stack_reg(-4);
 }
 
 CPU.prototype.pop16 = function()
 {
-    var sp = this.get_seg(reg_ss) + this.stack_reg[this.reg_vsp] | 0,
+    var sp = this.get_seg(reg_ss) + this.get_stack_reg() | 0,
         result = this.safe_read16(sp);
 
-    this.stack_reg[this.reg_vsp] += 2;
+    this.adjust_stack_reg(2);
     return result;
 }
 
 CPU.prototype.pop32s = function()
 {
-    var sp = this.get_seg(reg_ss) + this.stack_reg[this.reg_vsp] | 0,
+    var sp = this.get_seg(reg_ss) + this.get_stack_reg() | 0,
         result = this.safe_read32s(sp);
 
-    this.stack_reg[this.reg_vsp] += 4;
+    this.adjust_stack_reg(4);
     return result;
 }
 
@@ -237,9 +275,9 @@ CPU.prototype.pusha16 = function()
 {
     var temp = this.reg16[reg_sp];
 
-    // make sure we don't get a pagefault after having 
+    // make sure we don't get a pagefault after having
     // pushed several registers already
-    this.translate_address_write(this.get_seg(reg_ss) + this.stack_reg[this.reg_vsp] - 15 | 0);
+    this.translate_address_write(this.get_stack_pointer(-15));
 
     this.push16(this.reg16[reg_ax]);
     this.push16(this.reg16[reg_cx]);
@@ -255,7 +293,7 @@ CPU.prototype.pusha32 = function()
 {
     var temp = this.reg32s[reg_esp];
 
-    this.translate_address_write(this.get_seg(reg_ss) + this.stack_reg[this.reg_vsp] - 31 | 0);
+    this.translate_address_write(this.get_stack_pointer(-31));
 
     this.push32(this.reg32s[reg_eax]);
     this.push32(this.reg32s[reg_ecx]);
@@ -269,12 +307,12 @@ CPU.prototype.pusha32 = function()
 
 CPU.prototype.popa16 = function()
 {
-    this.translate_address_read(this.get_seg(reg_ss) + this.stack_reg[this.reg_vsp] + 15 | 0);
+    this.translate_address_read(this.get_stack_pointer(15));
 
     this.reg16[reg_di] = this.pop16();
     this.reg16[reg_si] = this.pop16();
     this.reg16[reg_bp] = this.pop16();
-    this.stack_reg[this.reg_vsp] += 2;
+    this.adjust_stack_reg(2);
     this.reg16[reg_bx] = this.pop16();
     this.reg16[reg_dx] = this.pop16();
     this.reg16[reg_cx] = this.pop16();
@@ -283,12 +321,12 @@ CPU.prototype.popa16 = function()
 
 CPU.prototype.popa32 = function()
 {
-    this.translate_address_read(this.get_seg(reg_ss) + this.stack_reg[this.reg_vsp] + 31 | 0);
+    this.translate_address_read(this.get_stack_pointer(31));
 
     this.reg32s[reg_edi] = this.pop32s();
     this.reg32s[reg_esi] = this.pop32s();
     this.reg32s[reg_ebp] = this.pop32s();
-    this.stack_reg[this.reg_vsp] += 4;
+    this.adjust_stack_reg(4);
     this.reg32s[reg_ebx] = this.pop32s();
     this.reg32s[reg_edx] = this.pop32s();
     this.reg32s[reg_ecx] = this.pop32s();
@@ -339,40 +377,51 @@ CPU.prototype.xchg32r = function(operand)
     this.reg32s[operand] = temp;
 }
 
-CPU.prototype.lss16 = function(seg, addr, mod)
+CPU.prototype.lss16 = function(seg)
 {
+    if(this.modrm_byte >= 0xC0)
+    {
+        this.trigger_ud();
+    }
+
+    var addr = this.modrm_resolve(this.modrm_byte);
+
     var new_reg = this.safe_read16(addr),
         new_seg = this.safe_read16(addr + 2 | 0);
 
     this.switch_seg(seg, new_seg);
 
-    this.reg16[mod] = new_reg;
+    this.reg16[this.modrm_byte >> 2 & 14] = new_reg;
 }
 
-CPU.prototype.lss32 = function(seg, addr, mod)
+CPU.prototype.lss32 = function(seg)
 {
+    if(this.modrm_byte >= 0xC0)
+    {
+        this.trigger_ud();
+    }
+
+    var addr = this.modrm_resolve(this.modrm_byte);
+
     var new_reg = this.safe_read32s(addr),
         new_seg = this.safe_read16(addr + 4 | 0);
 
     this.switch_seg(seg, new_seg);
 
-    this.reg32s[mod] = new_reg;
+    this.reg32s[this.modrm_byte >> 3 & 7] = new_reg;
 }
 
 CPU.prototype.enter16 = function(size, nesting_level)
 {
     nesting_level &= 31;
 
-    var frame_temp;
-    var tmp_ebp;
-
-    //dbg_log("enter16 stack=" + (this.stack_size_32 ? 32 : 16) + " size=" + size + " nest=" + nesting_level, LOG_CPU);
+    if(nesting_level) dbg_log("enter16 stack=" + (this.stack_size_32 ? 32 : 16) + " size=" + size + " nest=" + nesting_level, LOG_CPU);
     this.push16(this.reg16[reg_bp]);
-    frame_temp = this.reg16[reg_sp];
+    var frame_temp = this.reg16[reg_sp];
 
     if(nesting_level > 0)
     {
-        tmp_ebp = this.reg16[reg_ebp];
+        var tmp_ebp = this.reg16[reg_ebp];
         for(var i = 1; i < nesting_level; i++)
         {
             tmp_ebp -= 2;
@@ -388,16 +437,13 @@ CPU.prototype.enter32 = function(size, nesting_level)
 {
     nesting_level &= 31;
 
-    var frame_temp;
-    var tmp_ebp;
-
-    //dbg_log("enter32 stack=" + (this.stack_size_32 ? 32 : 16) + " size=" + size + " nest=" + nesting_level, LOG_CPU);
+    if(nesting_level) dbg_log("enter32 stack=" + (this.stack_size_32 ? 32 : 16) + " size=" + size + " nest=" + nesting_level, LOG_CPU);
     this.push32(this.reg32s[reg_ebp]);
-    frame_temp = this.reg32s[reg_esp];
+    var frame_temp = this.reg32s[reg_esp];
 
     if(nesting_level > 0)
     {
-        tmp_ebp = this.reg32s[reg_ebp];
+        var tmp_ebp = this.reg32s[reg_ebp];
         for(var i = 1; i < nesting_level; i++)
         {
             tmp_ebp -= 4;

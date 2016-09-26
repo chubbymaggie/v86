@@ -1,20 +1,5 @@
 "use strict";
 
-/** @define {boolean} */
-var IN_NODE = false;
-
-/** @define {boolean} */
-var IN_WORKER = false;
-
-/** @define {boolean} */
-var IN_BROWSER = true;
-
-
-if(IN_BROWSER + IN_NODE + IN_WORKER !== 1)
-{
-    throw "Invalid environment";
-}
-
 /** @constructor */
 function v86(bus)
 {
@@ -40,7 +25,7 @@ function v86(bus)
     this.next_tick = function(time) { console.assert(false); };
 }
 
-v86.prototype.run = function() 
+v86.prototype.run = function()
 {
     if(!this.running)
     {
@@ -49,7 +34,7 @@ v86.prototype.run = function()
     }
 };
 
-v86.prototype.do_tick = function() 
+v86.prototype.do_tick = function()
 {
     if(this.stopped)
     {
@@ -61,7 +46,14 @@ v86.prototype.do_tick = function()
     this.running = true;
     var dt = this.cpu.main_run();
 
-    this.next_tick(dt);
+    if(dt <= 0)
+    {
+        this.fast_next_tick();
+    }
+    else
+    {
+        this.next_tick(dt);
+    }
 };
 
 v86.prototype.stop = function()
@@ -179,6 +171,14 @@ if(typeof performance === "object" && performance.now)
         return performance.now();
     };
 }
+//else if(typeof process === "object" && process.hrtime)
+//{
+//    v86.microtick = function()
+//    {
+//        var t = process.hrtime();
+//        return t[0] * 1000 + t[1] / 1e6;
+//    };
+//}
 else
 {
     v86.microtick = Date.now;

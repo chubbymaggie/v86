@@ -1,7 +1,10 @@
-/*
+/**
  * This file contains functions to decode the modrm and sib bytes
  *
  * These functions return a virtual address
+ *
+ * @fileoverview .
+ * @suppress {newCheckTypes}
  */
 "use strict";
 (function()
@@ -1260,6 +1263,13 @@
     };;
     CPU.prototype.modrm_resolve = function(modrm_byte)
     {
-        return(this.address_size_32 ? this.modrm_table32 : this.modrm_table16)[modrm_byte](this);
+        if(modrm_byte < 0xC0)
+        {
+            return(this.address_size_32 ? this.modrm_table32 : this.modrm_table16)[modrm_byte](this);
+        }
+        else
+        {
+            return -1;
+        }
     };
 })();

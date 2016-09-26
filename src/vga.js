@@ -1,10 +1,10 @@
 "use strict";
 
 
-var 
-    /** 
+var
+    /**
      * Always 64k
-     * @const 
+     * @const
      */
     VGA_BANK_SIZE = 64 * 1024,
 
@@ -24,12 +24,12 @@ var VGA_PLANAR_REAL_BUFFER_START = 4 * VGA_BANK_SIZE;
 /**
  * @constructor
  * @param {CPU} cpu
- * @param {Bus.Connector} bus
+ * @param {BusConnector} bus
  * @param {number} vga_memory_size
  */
 function VGAScreen(cpu, bus, vga_memory_size)
 {
-    /** @const */
+    /** @const @type {BusConnector} */
     this.bus = bus;
 
     this.vga_memory_size = vga_memory_size;
@@ -45,13 +45,13 @@ function VGAScreen(cpu, bus, vga_memory_size)
 
     /**
      * Number of columns in text mode
-     * @type {number} 
+     * @type {number}
      */
     this.max_cols = 80;
 
-    /** 
+    /**
      * Number of rows in text mode
-     * @type {number} 
+     * @type {number}
      */
     this.max_rows = 25;
 
@@ -79,7 +79,7 @@ function VGAScreen(cpu, bus, vga_memory_size)
     /** @type {boolean} */
     this.graphical_mode = false;
 
-    /* 
+    /*
      * VGA palette containing 256 colors for video mode 13 etc.
      * Needs to be initialised by the BIOS
      */
@@ -91,7 +91,7 @@ function VGAScreen(cpu, bus, vga_memory_size)
     this.latch2 = 0;
     this.latch3 = 0;
 
-        
+
     /** @type {number} */
     this.svga_width = 0;
 
@@ -109,10 +109,10 @@ function VGAScreen(cpu, bus, vga_memory_size)
     /** @type {number} */
     this.svga_bank_offset = 0;
 
-    /** 
+    /**
      * The video buffer offset created by VBE_DISPI_INDEX_Y_OFFSET
      * In bytes
-     * @type {number} 
+     * @type {number}
      */
     this.svga_offset = 0;
 
@@ -126,6 +126,7 @@ function VGAScreen(cpu, bus, vga_memory_size)
     ];
     this.pci_id = 0x12 << 3;
     this.pci_bars = [];
+    this.name = "vga";
 
     cpu.devices.pci.register_device(this);
 
@@ -137,6 +138,8 @@ function VGAScreen(cpu, bus, vga_memory_size)
     };
 
     this.index_crtc = 0;
+
+    this.offset_register = 0;
 
     // index for setting colors through port 3C9h
     this.dac_color_index_write = 0;
@@ -165,13 +168,13 @@ function VGAScreen(cpu, bus, vga_memory_size)
 
 
     var io = cpu.io;
-        
+
     io.register_write(0x3C0, this, this.port3C0_write);
     io.register_read(0x3C0, this, this.port3C0_read, this.port3C0_read16);
 
     io.register_read(0x3C1, this, this.port3C1_read);
     io.register_write(0x3C2, this, this.port3C2_write);
-    
+
     io.register_write_consecutive(0x3C4, this, this.port3C4_write, this.port3C5_write);
 
     io.register_read(0x3C4, this, this.port3C4_read);
@@ -300,6 +303,9 @@ VGAScreen.prototype.get_state = function()
     state[37] = this.dispi_index;
     state[38] = this.dispi_enable_value;
     state[39] = this.svga_memory;
+    state[40] = this.graphical_mode_is_linear;
+    state[41] = this.attribute_controller_index;
+    state[42] = this.offset_register;
 
     return state;
 };
@@ -346,6 +352,9 @@ VGAScreen.prototype.set_state = function(state)
     this.dispi_index = state[37];
     this.dispi_enable_value = state[38];
     this.svga_memory.set(state[39]);
+    this.graphical_mode_is_linear = state[40];
+    this.attribute_controller_index = state[41];
+    this.offset_register = state[42];
 
     this.bus.send("screen-set-mode", this.graphical_mode);
 
@@ -562,7 +571,7 @@ VGAScreen.prototype.vga_memory_write_graphical_planar = function(addr, value)
         return;
     }
 
-    // Shift these, so that the bits for the color are in 
+    // Shift these, so that the bits for the color are in
     // the correct position in the for loop
     plane1_byte <<= 1;
     plane2_byte <<= 2;
@@ -603,7 +612,7 @@ VGAScreen.prototype.text_mode_redraw = function()
             chr = this.vga_memory[addr];
             color = this.vga_memory[addr | 1];
 
-            this.bus.send("screen-put-char", [row, col, chr, 
+            this.bus.send("screen-put-char", [row, col, chr,
                 this.vga256_palette[color >> 4 & 0xF], this.vga256_palette[color & 0xF]]);
 
             addr += 2;
@@ -635,7 +644,7 @@ VGAScreen.prototype.vga_memory_write_text_mode = function(addr, value)
         color = this.vga_memory[addr | 1];
     }
 
-    this.bus.send("screen-put-char", [row, col, chr, 
+    this.bus.send("screen-put-char", [row, col, chr,
             this.vga256_palette[color >> 4 & 0xF], this.vga256_palette[color & 0xF]]);
 
     this.vga_memory[addr] = value;
@@ -695,10 +704,12 @@ VGAScreen.prototype.svga_memory_write32 = function(addr, value)
 
 VGAScreen.prototype.complete_redraw = function()
 {
+    dbg_log("complete redraw", LOG_VGA);
+
     if(this.graphical_mode)
     {
-        this.diff_addr_min = this.vga_memory_size;
-        this.diff_addr_max = 0;
+        this.diff_addr_min = 0;
+        this.diff_addr_max = this.vga_memory_size;
     }
     else
     {
@@ -712,8 +723,8 @@ VGAScreen.prototype.destroy = function()
 };
 
 /**
- * @param {number} cols_count 
- * @param {number} rows_count 
+ * @param {number} cols_count
+ * @param {number} rows_count
  */
 VGAScreen.prototype.set_size_text = function(cols_count, rows_count)
 {
@@ -779,6 +790,8 @@ VGAScreen.prototype.set_video_mode = function(mode)
 
     if(is_graphical)
     {
+        this.svga_width = width;
+        this.svga_height = height;
         this.set_size_graphical(width, height, 8);
     }
 
@@ -902,7 +915,7 @@ VGAScreen.prototype.port3C9_write = function(color_byte)
         offset = this.dac_color_index_write % 3,
         color = this.vga256_palette[index];
 
-    color_byte = color_byte * 255 / 63 & 0xFF; 
+    color_byte = color_byte * 255 / 63 & 0xFF;
 
     if(offset === 0)
     {
@@ -1046,6 +1059,9 @@ VGAScreen.prototype.port3D5_write = function(value)
             this.cursor_address = this.cursor_address & 0xFF00 | value;
             this.update_cursor();
             break;
+        case 0x13:
+            this.offset_register = value;
+            break;
         default:
             dbg_log("3D5 / CRTC write " + h(this.index_crtc) + ": " + h(value), LOG_VGA);
     }
@@ -1054,25 +1070,24 @@ VGAScreen.prototype.port3D5_write = function(value)
 
 VGAScreen.prototype.port3D5_read = function()
 {
-    if(this.index_crtc === 0x9)
+    switch(this.index_crtc)
     {
-        return this.max_scan_line;
-    }
-    if(this.index_crtc === 0xA)
-    {
-        return this.cursor_scanline_start;
-    }
-    else if(this.index_crtc === 0xB)
-    {
-        return this.cursor_scanline_end;
-    }
-    else if(this.index_crtc === 0xE)
-    {
-        return this.cursor_address >> 8;
-    }
-    else if(this.index_crtc === 0xF)
-    {
-        return this.cursor_address & 0xFF;
+        case 0x9:
+            return this.max_scan_line;
+        case 0xA:
+            return this.cursor_scanline_start;
+        case 0xB:
+            return this.cursor_scanline_end;
+        case 0xC:
+            return this.start_address & 0xFF;
+        case 0xD:
+            return this.start_address >> 8;
+        case 0xE:
+            return this.cursor_address >> 8;
+        case 0xF:
+            return this.cursor_address & 0xFF;
+        case 0x13:
+            return this.offset_register;
     }
 
     dbg_log("3D5 read " + h(this.index_crtc), LOG_VGA);
@@ -1089,7 +1104,7 @@ VGAScreen.prototype.port3DA_read = function()
 
 VGAScreen.prototype.switch_video_mode = function(mar)
 {
-    // Cheap way to figure this out, using the Miscellaneous Output Register 
+    // Cheap way to figure this out, using the Miscellaneous Output Register
     // See: http://wiki.osdev.org/VGA_Hardware#List_of_register_settings
 
     if(mar === 0x67)
@@ -1178,8 +1193,8 @@ VGAScreen.prototype.port1CF_write = function(value)
 
     dbg_assert(this.svga_bpp !== 4, "unimplemented svga bpp: 4");
     dbg_assert(this.svga_bpp !== 15, "unimplemented svga bpp: 15");
-    dbg_assert(this.svga_bpp === 4 || this.svga_bpp === 8 || 
-               this.svga_bpp === 15 || this.svga_bpp === 16 || 
+    dbg_assert(this.svga_bpp === 4 || this.svga_bpp === 8 ||
+               this.svga_bpp === 15 || this.svga_bpp === 16 ||
                this.svga_bpp === 24 || this.svga_bpp === 32,
                "unexpected svga bpp: " + this.svga_bpp);
 
@@ -1224,7 +1239,14 @@ VGAScreen.prototype.svga_register_read = function(n)
             return this.svga_bank_offset >>> 16;
         case 6:
             // virtual width
-            return this.screen_width;
+            if(this.screen_width)
+            {
+                return this.screen_width;
+            }
+            else
+            {
+                return 1; // seabios/windows98 divide exception
+            }
         case 8:
             // x offset
             return 0;

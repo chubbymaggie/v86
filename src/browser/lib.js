@@ -2,13 +2,20 @@
 
 (function()
 {
-    v86util.load_file = load_file;
+    if(typeof XMLHttpRequest === "undefined")
+    {
+        v86util.load_file = load_file_nodejs;
+    }
+    else
+    {
+        v86util.load_file = load_file;
+    }
 
     v86util.AsyncXHRBuffer = AsyncXHRBuffer;
     v86util.AsyncFileBuffer = AsyncFileBuffer;
     v86util.SyncFileBuffer = SyncFileBuffer;
 
-    /** 
+    /**
      * @param {string} filename
      * @param {Object} options
      */
@@ -30,7 +37,6 @@
             for(var i = 0; i < header_names.length; i++)
             {
                 var name = header_names[i];
-
                 http.setRequestHeader(name, options.headers[name]);
             }
         }
@@ -57,17 +63,42 @@
                 options.progress(e);
             };
         }
-        
+
         http.send(null);
     }
 
+    function load_file_nodejs(filename, options)
+    {
+        var o = {
+            encoding: options.as_text ? "utf-8" : null,
+        };
+
+        require("fs")["readFile"](filename, o, function(err, data)
+        {
+            if(err)
+            {
+                console.log("Could not read file:", filename);
+            }
+            else
+            {
+                var result = data;
+
+                if(!options.as_text)
+                {
+                    result = new Uint8Array(result).buffer;
+                }
+
+                options.done(result);
+            }
+        });
+    }
 
     /**
      * Asynchronous access to ArrayBuffer, loading blocks lazily as needed,
      * using the `Range: bytes=...` header
      *
      * @constructor
-     * @param {string} filename Name of the file to download 
+     * @param {string} filename Name of the file to download
      * @param {number|undefined} size
      */
     function AsyncXHRBuffer(filename, size)
@@ -77,7 +108,7 @@
         /** @const */
         this.block_size = 256;
         this.byteLength = size;
-        
+
         this.loaded_blocks = {};
 
         this.onload = undefined;
@@ -107,21 +138,60 @@
                 }
                 else
                 {
-                    console.assert(false, 
+                    console.assert(false,
                         "Cannot use: " + this.filename + ". " +
                         "`Range: bytes=...` header not supported (Got `" + header + "`)");
                 }
-            }.bind(this), 
+            }.bind(this),
             headers: {
                 Range: "bytes=0-0",
 
+                //"Accept-Encoding": "",
+
                 // Added by Chromium, but can cause the whole file to be sent
-                "If-Range": "",
+                // Settings this to empty also causes problems and Chromium
+                // doesn't seem to create this header any more
+                //"If-Range": "",
             }
         });
     }
 
-    /** 
+    /**
+     * @param {number} offset
+     * @param {number} len
+     * @param {function(!Uint8Array)} fn
+     */
+    AsyncXHRBuffer.prototype.get_from_cache = function(offset, len, fn)
+    {
+        var number_of_blocks = len / this.block_size;
+        var block_index = offset / this.block_size;
+
+        for(var i = 0; i < number_of_blocks; i++)
+        {
+            var block = this.loaded_blocks[block_index + i];
+
+            if(!block)
+            {
+                return;
+            }
+        }
+
+        if(number_of_blocks === 1)
+        {
+            return this.loaded_blocks[block_index];
+        }
+        else
+        {
+            var result = new Uint8Array(len);
+            for(var i = 0; i < number_of_blocks; i++)
+            {
+                result.set(this.loaded_blocks[block_index + i], i * this.block_size);
+            }
+            return result;
+        }
+    };
+
+    /**
      * @param {number} offset
      * @param {number} len
      * @param {function(!Uint8Array)} fn
@@ -132,6 +202,13 @@
         console.assert(len % this.block_size === 0);
         console.assert(len);
 
+        var block = this.get_from_cache(offset, len, fn);
+        if(block)
+        {
+            fn(block);
+            return;
+        }
+
         var range_start = offset;
         var range_end = offset + len - 1;
 
@@ -141,7 +218,7 @@
                 var block = new Uint8Array(buffer);
                 this.handle_read(offset, len, block);
                 fn(block);
-            }.bind(this), 
+            }.bind(this),
             headers: {
                 Range: "bytes=" + range_start + "-" + range_end,
             }
@@ -160,7 +237,7 @@
     AsyncXHRBuffer.prototype.set = function(start, data, fn)
     {
         console.assert(start + data.byteLength <= this.byteLength);
-        
+
         var len = data.length;
 
         console.assert(start % this.block_size === 0);
@@ -198,7 +275,7 @@
     {
         // Used by AsyncXHRBuffer and AsyncFileBuffer
         // Overwrites blocks from the original source that have been written since
-        
+
         var start_block = offset / this.block_size;
         var block_count = len / this.block_size;
 
@@ -250,8 +327,8 @@
         this.load_next(0);
     }
 
-    /** 
-     * @param {number} start 
+    /**
+     * @param {number} start
      */
     SyncFileBuffer.prototype.load_next = function(start)
     {
@@ -270,7 +347,7 @@
         if(this.onprogress)
         {
             this.onprogress({
-                loaded: start,   
+                loaded: start,
                 total: this.byteLength,
                 lengthComputable: true,
             });
@@ -289,7 +366,7 @@
         }
     }
 
-    /** 
+    /**
      * @param {number} start
      * @param {number} len
      * @param {function(!Uint8Array)} fn
@@ -300,7 +377,7 @@
         fn(new Uint8Array(this.buffer, start, len));
     };
 
-    /** 
+    /**
      * @param {number} offset
      * @param {!Uint8Array} slice
      * @param {function()} fn
@@ -341,7 +418,7 @@
         this.onload && this.onload({});
     };
 
-    /** 
+    /**
      * @param {number} offset
      * @param {number} len
      * @param {function(!Uint8Array)} fn
@@ -351,6 +428,13 @@
         console.assert(offset % this.block_size === 0);
         console.assert(len % this.block_size === 0);
         console.assert(len);
+
+        var block = this.get_from_cache(offset, len, fn);
+        if(block)
+        {
+            fn(block);
+            return;
+        }
 
         var fr = new FileReader();
 
@@ -365,6 +449,7 @@
 
         fr.readAsArrayBuffer(this.file.slice(offset, offset + len));
     }
+    AsyncFileBuffer.prototype.get_from_cache = AsyncXHRBuffer.prototype.get_from_cache;
     AsyncFileBuffer.prototype.set = AsyncXHRBuffer.prototype.set;
     AsyncFileBuffer.prototype.handle_read = AsyncXHRBuffer.prototype.handle_read;
 
@@ -372,6 +457,43 @@
     {
         // We must load all parts, unlikely a good idea for big files
         fn();
+    };
+
+    AsyncFileBuffer.prototype.get_as_file = function(name)
+    {
+        var parts = [];
+        var existing_blocks = Object.keys(this.loaded_blocks)
+                                .map(Number)
+                                .sort(function(x, y) { return x - y; });
+
+        var current_offset = 0;
+
+        for(var i = 0; i < existing_blocks.length; i++)
+        {
+            var block_index = existing_blocks[i];
+            var block = this.loaded_blocks[block_index];
+            var start = block_index * this.block_size;
+            console.assert(start >= current_offset);
+
+            if(start !== current_offset)
+            {
+                parts.push(this.file.slice(current_offset, start));
+                current_offset = start;
+            }
+
+            parts.push(block);
+            current_offset += block.length;
+        }
+
+        if(current_offset !== this.file.size)
+        {
+            parts.push(this.file.slice(current_offset));
+        }
+
+        var file = new File(parts, name);
+        console.assert(file.size === this.file.size);
+
+        return file;
     };
 
 })();

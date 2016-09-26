@@ -1,15 +1,15 @@
 "use strict";
 
 /**
- * An ethernet-through-websocket adapter, to be used with 
+ * An ethernet-through-websocket adapter, to be used with
  *     https://github.com/benjamincburns/websockproxy
- * 
+ *
  * emulated ethernet card <--> this <--> websocket proxy <--> network
  *
  * @constructor
  *
  * @param {string} url
- * @param {Bus.Connector} bus
+ * @param {BusConnector} bus
  */
 function NetworkAdapter(url, bus)
 {
@@ -17,6 +17,8 @@ function NetworkAdapter(url, bus)
 
     this.bus = bus;
     this.socket = undefined;
+
+    // TODO: circular buffer?
     this.send_queue = [];
     this.url = url;
 
@@ -63,7 +65,7 @@ NetworkAdapter.prototype.handle_error = function(e)
     //console.log("onerror", e);
 };
 
-NetworkAdapter.prototype.destroy = function() 
+NetworkAdapter.prototype.destroy = function()
 {
     if(this.socket)
     {
@@ -100,6 +102,7 @@ NetworkAdapter.prototype.connect = function()
     catch(e)
     {
         this.handle_close(undefined);
+        return;
     }
 
     this.socket.binaryType = "arraybuffer";

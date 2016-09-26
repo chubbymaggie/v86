@@ -21,18 +21,18 @@ var DLAB = 0x80;
 /** @const */var UART_IIR_CTI = 0x0c; /* Character timeout */
 
 
-/** 
- * @constructor 
+/**
+ * @constructor
  * @param {CPU} cpu
  * @param {number} port
- * @param {Bus.Connector} bus
+ * @param {BusConnector} bus
  */
 function UART(cpu, port, bus)
 {
-    /** @const */
+    /** @const @type {BusConnector} */
     this.bus = bus;
 
-    /** @const */
+    /** @const @type {CPU} */
     this.cpu = cpu;
 
     this.ints = 0;
@@ -82,7 +82,7 @@ function UART(cpu, port, bus)
 
     var io = cpu.io;
 
-    io.register_write(port, this, function(out_byte) 
+    function write_data(out_byte)
     {
         if(this.line_control & DLAB)
         {
@@ -110,6 +110,15 @@ function UART(cpu, port, bus)
             this.bus.send("serial0-output-line", String.fromCharCode.apply("", this.current_line));
             this.current_line = [];
         }
+    }
+
+    io.register_write(port, this, function(out_byte)
+    {
+        write_data.call(this, out_byte);
+    }, function(out_word)
+    {
+        write_data.call(this, out_word & 0xFF);
+        write_data.call(this, out_word >> 8);
     });
 
     io.register_write(port | 1, this, function(out_byte)
@@ -295,7 +304,7 @@ UART.prototype.ClearInterrupt = function(line)
     this.ints &= ~(1 << line);
     this.iir = UART_IIR_NO_INT;
 
-    if(line === this.iir) 
+    if(line === this.iir)
     {
         this.NextInterrupt();
     }
@@ -338,7 +347,7 @@ UART.prototype.NextInterrupt = function() {
 };
 
 
-/** 
+/**
  * @param {number} data
  */
 UART.prototype.data_received = function(data)

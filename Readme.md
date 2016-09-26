@@ -1,23 +1,26 @@
+[![Join the chat at https://gitter.im/copy/v86](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/copy/v86?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
-Demos 
+
+Demos
 -
 
+- [Windows 98](http://copy.sh/v86/?profile=windows98)
 - [Linux](http://copy.sh/v86/?profile=linux26)
 - [Linux 3](http://copy.sh/v86/?profile=linux3)
 - [KolibriOS](http://copy.sh/v86/?profile=kolibrios)
 - [FreeDOS](http://copy.sh/v86/?profile=freedos)
 - [Windows 1.01](http://copy.sh/v86/?profile=windows1)
-- [Archlinux](http://copy.sh/v86/?profile=archlinux) (possibly unstable)
+- [Archlinux](http://copy.sh/v86/?profile=archlinux)
 
 
 API examples
 -
 
-- [Basic](docs/samples/basic.html)
-- [Programatically using the serial terminal](docs/samples/serial.html)
-- [A LUA interpreter](docs/samples/lua.html)
-- [Two instances in one window](docs/samples/two_instances.html)
-- [Saving and restoring emulator state](docs/samples/save_restore.html)
+- [Basic](examples/basic.html)
+- [Programatically using the serial terminal](examples/serial.html)
+- [A Lua interpreter](examples/lua.html)
+- [Two instances in one window](examples/two_instances.html)
+- [Saving and restoring emulator state](examples/save_restore.html)
 
 Using v86 for your own purposes is as easy as:
 
@@ -68,27 +71,36 @@ v86 emulates an x86-compatible CPU and hardware. Here's a list of emulated hardw
 - A virtio filesystem.
 
 
+Testing
+-
+
+The disk images are not included in this repository. You can download them
+directly from the website using:
+
+`wget -P images/ http://copy.sh/v86/images/{linux.iso,linux3.iso,kolibri.img,windows101.img,os8.dsk,freedos722.img,openbsd.img}`.
+
+A testsuite is available in `tests/full/`. Run it using `node tests/full/run.js`.
+
+
 How to build, run and embed?
 -
 
-- In order to build the `cpu.js` file, you need `make` and `cpp` (the C preprocessor).
-  Run: `make build/cpu.js`.
 - If you want a compressed and fast (i.e. with debug code removed) version, you
   need Closure Compiler. Download it as shown below and run `make build/v86_all.js`.
 - ROM and disk images are loaded via XHR, so if you want to try out `index.html`
   locally, make sure to serve it from a local webserver. You can use `make run`
   to serve the files using Python's SimpleHTTPServer.
-- If you want only want to embed v86 on website you can use libv86.js. For
-  usage, check out the [API](docs/api.md) and [examples](docs/samples/).
+- If you only want to embed v86 in a webpage you can use libv86.js. For
+  usage, check out the [API](docs/api.md) and [examples](examples/).
 - A couple of disk images are provided for testing. You can check them out
   using `wget -P images/ http://copy.sh/v86/images/{linux.iso,linux3.iso,kolibri.img,windows101.img,os8.dsk,freedos722.img,openbsd.img}`.
 
 
-**Summary:**
+**Short summary:**
 
 ```bash
 # grab the main repo
-git clone https://github.com/copy/v86.git                     
+git clone https://github.com/copy/v86.git
 
 cd v86
 
@@ -98,25 +110,18 @@ wget -P images/ http://copy.sh/v86/images/{linux.iso,linux3.iso,kolibri.img,wind
 # grab closure compiler
 wget -P closure-compiler http://dl.google.com/closure-compiler/compiler-latest.zip
 unzip -d closure-compiler closure-compiler/compiler-latest.zip compiler.jar
+
+# build the library
+make build/libv86.js
+
+# run the tests
+./tests/full/run.js
 ```
 
-Rebuild compiled version:
+Why?
+-
 
-```
-make
-```
-
-Rebuild only debug version (only necessary after changing `.macro.js` files):
-
-```
-make build/cpu.js
-```
-
-
-Why? 
-- 
-
-Similiar projects have been done before, but I decided to work on this as a fun
+Similar projects have been done before, but I decided to work on this as a fun
 project and learn something about the x86 architecture. It has grown pretty
 advanced and I got Linux and KolibriOS working, so there might be some actual
 uses.
@@ -137,7 +142,7 @@ Here's an overview of the operating systems supported in v86:
     terminal.
   - Nanolinux works.
   - Archlinux works. Add `atkbd` to `MODULES` in `/etc/mkinitcpio.conf`.
-- FreeDOS and Windows 1.01 run very well. 
+- FreeDOS and Windows 1.01 run very well.
 - KolibriOS works. A few applications need SSE.
 - Haiku boots, but takes very long (around 30 minutes). Set the memory size to 128MB.
 - ReactOS doesn't work.
@@ -152,9 +157,7 @@ How can I contribute?
 - Add new features (hardware devices, fill holes in the CPU), fix bugs. Check
   out the issues section and contact me if you need help.
 - Report bugs.
-- Donate. Via Bitcoin:
-  [`14KBXSoewGzbQY8VoznJ5MZXGxoia8RxC9`](https://blockchain.info/address/14KBXSoewGzbQY8VoznJ5MZXGxoia8RxC9).
-  If you want to donate elsewhere, let me know.
+- If you want to donate, let me know.
 
 License
 -
@@ -165,7 +168,7 @@ Simplified BSD License, see [LICENSE](LICENSE), unless otherwise noted.
 Credits
 -
 
-- Test cases via QEMU, http://wiki.qemu.org/Main_Page 
+- Test cases via QEMU, http://wiki.qemu.org/Main_Page
 - [Disk Images](https://github.com/copy/images)
 - [The jor1k project](https://github.com/s-macke/jor1k) for 9p and filesystem drivers
 
